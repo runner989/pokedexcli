@@ -31,10 +31,18 @@ type LocationResponse struct {
 type Command struct {
 	name        string
 	description string
-	callback    func(cfg *config) error
+	callback    func(cfg *config, args []string) error
 }
 
-func commandHelp() error {
+type ExploreResponse struct {
+	PokemonEncounters []struct {
+		Pokemon struct {
+			Name string `json:"name"`
+		} `json:"pokemon"`
+	} `json:"pokemon_encounters"`
+}
+
+func commandHelp(cfg *config, args []string) error {
 	fmt.Println("")
 	fmt.Println("Welcome to the Pokedex!")
 	fmt.Println("Usage: ")
@@ -42,12 +50,13 @@ func commandHelp() error {
 	fmt.Println("help: Displays this help message")
 	fmt.Println("map: Displays 20 location areas")
 	fmt.Println("mapb: Displays the previous 20 location areas")
+	fmt.Println("explore <area>: Explore a location area and list Pokemon")
 	fmt.Println("exit: Exits the program")
 	fmt.Println("")
 	return nil
 }
 
-func commandExit() error {
+func commandExit(cfg *config, args []string) error {
 	os.Exit(0)
 	return nil
 }
@@ -89,7 +98,7 @@ func fetchLocationAreas(url string) (*LocationResponse, error) {
 	return &locations, nil
 }
 
-func commandMap(cfg *config) error {
+func commandMap(cfg *config, args []string) error {
 	url := "https://pokeapi.co/api/v2/location-area"
 	if cfg.Next != nil {
 		url = *cfg.Next
@@ -112,7 +121,7 @@ func commandMap(cfg *config) error {
 	return nil
 }
 
-func commandMapb(cfg *config) error {
+func commandMapb(cfg *config, args []string) error {
 	if cfg.Previous == nil {
 		return fmt.Errorf("no previous locations to display")
 	}
@@ -134,31 +143,94 @@ func commandMapb(cfg *config) error {
 	return nil
 }
 
+func fetchPokemonInLocation(area string) (*ExploreResponse, error) {
+	url := fmt.Sprintf("https://pokeapi.co/api/v2/location-area/%s", area)
+
+	// Check the cache first
+	if cachedData, found := cache.Get(url); found {
+		fmt.Println("Using cached data for", area)
+
+		var exploreResponse ExploreResponse
+		if err := json.Unmarshal(cachedData, &exploreResponse); err != nil {
+			return nil, err
+		}
+		return &exploreResponse, nil
+	}
+
+	// If not in cache, fetch from the API
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Unmarshal the response into the ExploreResponse struct
+	var exploreResponse ExploreResponse
+	if err := json.Unmarshal(body, &exploreResponse); err != nil {
+		return nil, err
+	}
+
+	// Cache the response
+	cache.Add(url, body)
+
+	return &exploreResponse, nil
+}
+
+// The explore command
+func commandExplore(cfg *config, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("you must provide a location area to explore")
+	}
+
+	area := args[0]
+	fmt.Printf("Exploring %s...\n", area)
+
+	// Fetch Pokémon in the given area
+	exploreResponse, err := fetchPokemonInLocation(area)
+	if err != nil {
+		return fmt.Errorf("failed to explore location: %w", err)
+	}
+
+	// Print the found Pokémon
+	fmt.Println("Found Pokemon:")
+	for _, encounter := range exploreResponse.PokemonEncounters {
+		fmt.Printf(" - %s\n", encounter.Pokemon.Name)
+	}
+
+	return nil
+}
+
 func main() {
 	commands := map[string]Command{
 		"help": {
 			name:        "help",
 			description: "Displays this help message",
-			callback: func(cfg *config) error {
-				return commandHelp()
-			},
+			callback:    commandHelp,
 		},
 		"exit": {
 			name:        "exit",
 			description: "Exits the program",
-			callback: func(cfg *config) error {
-				return commandExit()
-			},
+			callback:    commandExit,
 		},
 		"map": {
 			name:        "map",
 			description: "Display the name of 20 location areas",
-			callback:    func(cfg *config) error { return commandMap(cfg) },
+			callback:    commandMap,
 		},
 		"mapb": {
 			name:        "mapb",
 			description: "Map back - display the previous 20 location areas",
-			callback:    func(cfg *config) error { return commandMapb(cfg) },
+			callback:    commandMapb,
+		},
+		"explore": {
+			name:        "explore",
+			description: "Explore a location area and list Pokemon",
+			callback:    commandExplore,
 		},
 	}
 
@@ -172,9 +244,14 @@ func main() {
 			break
 		}
 		input := cleanInput(scanner.Text())
+		if len(input) == 0 {
+			continue
+		}
+
 		commandName := input[0]
+		args := input[1:]
 		if command, exists := commands[commandName]; exists {
-			if err := command.callback(cfg); err != nil {
+			if err := command.callback(cfg, args); err != nil {
 				fmt.Println("Error:", err)
 			}
 		} else {
