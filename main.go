@@ -16,9 +16,26 @@ import (
 
 var cache = pokecache.NewCache(5 * time.Minute)
 
+type Stat struct {
+	BaseStat int `json:"base_stat"`
+	StatInfo struct {
+		Name string `json:"name"`
+	} `json:"stat"`
+}
+
+type Type struct {
+	TypeInfo struct {
+		Name string `json:"name"`
+	} `json:"type"`
+}
+
 type Pokemon struct {
 	Name           string `json:"name"`
 	BaseExperience int    `json:"base_experience"`
+	Height         int    `json:"height"`
+	Weight         int    `json:"weight"`
+	Stats          []Stat `json:"stats"`
+	Types          []Type `json:"types"`
 }
 
 type config struct {
@@ -59,6 +76,7 @@ func commandHelp(cfg *config, args []string) error {
 	fmt.Println("mapb: Displays the previous 20 location areas")
 	fmt.Println("explore <area>: Explore a location area and list Pokemon")
 	fmt.Println("catch <Pokemon>: Attempt to catch a Pokemon by name")
+	fmt.Println("inspect <pokemon>: Inspect a caught Pokémon by name")
 	fmt.Println("exit: Exits the program")
 	fmt.Println("")
 	return nil
@@ -73,6 +91,38 @@ func cleanInput(text string) []string {
 	output := strings.ToLower(text)
 	words := strings.Fields(output)
 	return words
+}
+
+func commandInspect(cfg *config, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("you must provide a Pokémon name to inspect")
+	}
+
+	pokemonName := args[0]
+
+	// Check if the Pokémon has been caught
+	pokemon, caught := cfg.Pokedex[pokemonName]
+	if !caught {
+		fmt.Printf("You have not caught that Pokémon.\n")
+		return nil
+	}
+
+	// Print the Pokémon's details
+	fmt.Printf("Name: %s\n", pokemon.Name)
+	fmt.Printf("Height: %d\n", pokemon.Height)
+	fmt.Printf("Weight: %d\n", pokemon.Weight)
+
+	fmt.Println("Stats:")
+	for _, stat := range pokemon.Stats {
+		fmt.Printf("  - %s: %d\n", stat.StatInfo.Name, stat.BaseStat)
+	}
+
+	fmt.Println("Types:")
+	for _, t := range pokemon.Types {
+		fmt.Printf("  - %s\n", t.TypeInfo.Name)
+	}
+
+	return nil
 }
 
 func fetchLocationAreas(url string) (*LocationResponse, error) {
@@ -258,7 +308,7 @@ func attemptCatch(pokemon *Pokemon) bool {
 
 func commandCatch(cfg *config, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("You must provide a Pokémon name to catch")
+		return fmt.Errorf("you must provide a Pokémon name to catch")
 	}
 
 	pokemonName := args[0]
@@ -319,6 +369,11 @@ func main() {
 			name:        "catch",
 			description: "Attempt to catch a Pokémon by name",
 			callback:    commandCatch,
+		},
+		"inspect": {
+			name:        "inspect",
+			description: "Inspect a caught Pokémon by name",
+			callback:    commandInspect,
 		},
 	}
 
