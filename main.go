@@ -77,8 +77,23 @@ func commandHelp(cfg *config, args []string) error {
 	fmt.Println("explore <area>: Explore a location area and list Pokemon")
 	fmt.Println("catch <Pokemon>: Attempt to catch a Pokemon by name")
 	fmt.Println("inspect <pokemon>: Inspect a caught Pokémon by name")
+	fmt.Println("pokedex: List all caught Pokemon")
 	fmt.Println("exit: Exits the program")
 	fmt.Println("")
+	return nil
+}
+
+func commandPokedex(cfg *config, args []string) error {
+	if len(cfg.Pokedex) == 0 {
+		fmt.Println("You haven't caught any Pokémon yet.")
+		return nil
+	}
+
+	fmt.Println("Your Pokedex:")
+	for name := range cfg.Pokedex {
+		fmt.Printf(" - %s\n", name)
+	}
+
 	return nil
 }
 
@@ -374,6 +389,11 @@ func main() {
 			name:        "inspect",
 			description: "Inspect a caught Pokémon by name",
 			callback:    commandInspect,
+		},
+		"pokedex": {
+			name:        "pokedex",
+			description: "List all caught Pokémon",
+			callback:    commandPokedex,
 		},
 	}
 
